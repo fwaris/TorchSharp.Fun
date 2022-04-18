@@ -14,19 +14,40 @@ type Args() =
     member _.tryGet name = match d.TryGetValue name with true,v -> Some v | _ -> None
     static member inline (?) (o:Args,name:string) :^R = (if name.StartsWith("_") then  o.tryGet name |> box else o.get name |> box) :?> ^R
     static member (?<-) (o:Args,name:string,value:'R) : Args = o.set name value; o
-    
 
 type IModel =
     abstract forward : torch.Tensor->torch.Tensor
     abstract forward : torch.Tensor*Args -> torch.Tensor*Args //multiple inputs and outputs
     abstract Module : Module
 
-let randName() = Guid.NewGuid().ToString()
+//let randName() = Guid.NewGuid().ToString()
 
-let registerNamed (parent:#Module) (name,child:#Module) = if child <> null then parent.register_module(name,child)    
+let parseName (n:string) =
+    let i = n.LastIndexOf("_")
+    if i < 0 then
+        n,0
+    else
+        let rs = n.Substring(i+1)
+        let num =
+            match Int32.TryParse rs with
+            | true , x   -> x 
+            | false, _   -> 0
+        let prefix = n.Substring(0,i)
+        prefix,num
 
-let register (parent:IModel) (child:IModel) =
-    registerNamed parent.Module (randName(),child.Module)
+let rec makeUnique name names =
+    match names with
+    | [] -> name
+    | x::rest when name = x -> 
+        let n,num = parseName x
+        let n2 = $"{n}_{num+1}"
+        makeUnique n2 rest
+    | _::rest -> makeUnique name rest
+
+let registerNamed (parent:#Module) (name,child:#Module) = 
+    if child <> null then 
+        let uname = parent.named_children() |> Seq.map(fun struct(n,_) -> n) |> Seq.toList |> makeUnique name 
+        parent.register_module(uname,child)    
 
 ///convert object to IModel if convertible
 let inline M< ^Q when ^Q : (member forward:torch.Tensor->torch.Tensor)>  (mdl:^Q) =
@@ -39,12 +60,14 @@ let inline M< ^Q when ^Q : (member forward:torch.Tensor->torch.Tensor)>  (mdl:^Q
                         }
     | x              -> failwith $"{x} is not convertible to IModel"
 
-let registerNamedChildren names (childModules:IModel seq) parent =
+let inline registerNamedChildren names (childModules:IModel seq) parent =
+    let parent = M parent
     Seq.zip (Seq.tail names) childModules     
-    |> Seq.iter (fun (n,c) -> registerNamed parent (n,c.Module))
+    |> Seq.iter (fun (n,c) -> registerNamed parent.Module (n,c.Module))
 
-let registerChildren children parent =
-    children |> Seq.iter (fun c -> register parent c)
+let inline registerChildren children parent =
+    let names = Seq.append ["dummy"] (children |> Seq.map (fun c -> (M c).Module.GetName()))
+    registerNamedChildren names children parent
 
 [<AbstractClass>]
 type AbstractModel() =
@@ -63,55 +86,45 @@ type AbstractModel() =
                                                             let t' = this.forward(t)
                                                             t',ts
                                                         member _.Module = a.Module
-                                                 }
-
-type FuncModel(name,parameters:Modules.Parameter[],fwd:torch.Tensor->torch.Tensor) as this =
+                                                  }
+///supporting class for creating 'forward' functions in a 'functional' way.
+type FuncModel(name,parameters:Modules.Parameter[],fwd:torch.Tensor->torch.Tensor, fwdExt:(torch.Tensor*Args->torch.Tensor*Args)) as this =
     inherit Module(name)
-    do parameters |> Array.iter (fun p -> this.register_parameter(p.name,p.t(),p.requires_grad))
+    do parameters |> Array.iter (fun p -> this.register_parameter(p.name,p))
     override this.forward(t) = let t' = fwd t in t'
     member this.Module : Module = this :> _
 
     interface IModel with
         member this.forward(t) = this.forward(t)
-        member this.forward(t,ts) = 
-            let t1 =  this.forward(t)
-            t1,ts
+        member this.forward(t,ts:Args) : (torch.Tensor * Args)= fwdExt(t,ts)
         member this.Module = this :> _ 
 
-type FuncModelList(name,parameters:Modules.Parameter[],fwd) as this =
-    inherit Module(name)
-    do parameters |> Array.iter (fun p -> this.register_parameter(p.name,p.t(),p.requires_grad))
-    override this.forward(t) = fwd(t,Args()) |> fst
-    member this.Module : Module = this :> _
-    interface IModel with
-        member this.forward(t) = this.forward(t)
-        member this.forward(t,ts) = fwd(t,ts)
-        member this.Module = this :> _    
+let extend (fwd:torch.Tensor->torch.Tensor) = fun (t,ts:Args) -> fwd t,ts
+let notImplFwd (fwd:torch.Tensor) : torch.Tensor = failwith "Not implemented. Call with extended version of fwd that includes Args"
 
-    
 ///Create a model (module) from the given function and register the childModules as children
 let inline F childModules (fwd:torch.Tensor -> torch.Tensor) =
-    let p = new FuncModel(randName(), [||],fwd) 
+    let p = new FuncModel("funcModel", [||],fwd, extend fwd) 
     registerChildren childModules p
-    p
+    p :> IModel
 
 ///Create a model (module) from the given function. Register the childModules as children and add the parameters to the model
 let inline  F' childModules (parameters:Modules.Parameter seq) (fwd:torch.Tensor -> torch.Tensor) =
-    let p = new FuncModel(randName(), Seq.toArray parameters,fwd) 
+    let p = new FuncModel("funcModel", Seq.toArray parameters,fwd, extend fwd) 
     registerChildren childModules p
-    p
+    p :> IModel
 
 ///Create a model (module) from the given function and register the childModules as children
 let inline Fl childModules fwd =
-    let p = new FuncModelList(randName(), [||],fwd) :> IModel
+    let p = new FuncModel("funcModel", [||],fwd, extend fwd) 
     registerChildren childModules p
-    p
+    p :> IModel
 
 ///Create a model (module) from the given function. Register the childModules as children and add the parameters to the model
 let inline  Fl' childModules (parameters:Modules.Parameter seq) fwd =
-    let p = new FuncModelList(randName(), Seq.toArray parameters,fwd) 
+    let p = new FuncModel("funcModel", Seq.toArray parameters,fwd, extend fwd) 
     registerChildren childModules p
-    p
+    p :> IModel
 
 let checkNames names childModules =
     if Seq.length names <> Seq.length childModules + 1 then 
@@ -121,38 +134,38 @@ let checkNames names childModules =
 /// <seealso cref="F" />
 let inline Fn names childModules (fwd:torch.Tensor -> torch.Tensor) =
     checkNames names childModules
-    let p = new FuncModel(Seq.head names, [||],fwd) 
-    registerNamedChildren names childModules p
-    p
+    let p = new FuncModel(Seq.head names, [||],fwd, extend fwd) 
+    registerNamedChildren (Seq.tail names) childModules p
+    p : IModel
 
 ///<summary>Same as F' but now assign names to all models (modules)</summary>
 /// <seealso cref="F'" />
 let inline Fn' names childModules (parameters:Modules.Parameter seq) (fwd:torch.Tensor -> torch.Tensor) =
     checkNames names childModules
-    let p = new FuncModel(Seq.head names, Seq.toArray parameters,fwd) 
+    let p = new FuncModel(Seq.head names, Seq.toArray parameters,fwd, extend fwd) 
     registerNamedChildren names childModules p
-    p
+    p : IModel
 
 ///<summary>Same as F but now assign names to all models (modules)</summary>
 /// <seealso cref="F" />
 let inline Fnl names childModules fwd =
     checkNames names childModules
-    let p = new FuncModelList(Seq.head names, [||],fwd) 
+    let p = new FuncModel(Seq.head names, [||],notImplFwd,fwd) 
     registerNamedChildren names childModules p
-    p
+    p : IModel
 
 ///<summary>Same as F' but now assign names to all models (modules)</summary>
 /// <seealso cref="F'" />
 let inline Fnl' names childModules (parameters:Modules.Parameter seq) fwd =
     checkNames names childModules
-    let p = new FuncModelList(Seq.head names, Seq.toArray parameters,fwd) 
+    let p = new FuncModel(Seq.head names, Seq.toArray parameters,notImplFwd,fwd) 
     registerNamedChildren names childModules p
-    p
+    p : IModel
 
-let inline (->>) m1 m2 = 
+let inline (=>>) m1 (n,m2) = 
     let m1 = M m1
     let m2 = M m2 
-    registerNamed m1.Module ($"{m2.Module.GetName()}_{randName()}",m2.Module)
+    registerNamed m1.Module (n,m2.Module)
     {new IModel with
         member _.forward(t) =
             use t' = m1.forward(t)
@@ -164,7 +177,11 @@ let inline (->>) m1 m2 =
             t2_s
         member _.Module = m1.Module
     }
-//let inline (=>>) m1 (n,m2) = compose m1 (Some n, m2)
+
+let inline (->>) m1 m2 =  
+    let m1 = M m1
+    let m2 = M m2
+    m1 =>> (m2.Module.GetName(),m2)
 
 module Tensor = 
     //Note: ensure 't matches tensor datatype otherwise ToArray might crash the app (i.e. exception cannot be caught)
@@ -225,20 +242,24 @@ module Model =
         | FBool ds      -> setData<bool> t ds
         | FBFFloat16 ds -> setData<Half> t ds
 
-    let saveParms file (model:IModel) =
-        let parms = model.Module.parameters()
-        let values = parms |> Array.map getTnsrData
-        let ser = FsPickler.CreateBinarySerializer()
-        use str = IO.File.Create(file:string)
-        ser.Serialize(str,values)
+    //let saveParms file (model:IModel) =
+    //    let parms = model.Module.parameters()
+    //    let values = parms |> Array.map getTnsrData
+    //    let ser = FsPickler.CreateBinarySerializer()
+    //    use str = IO.File.Create(file:string)
+    //    ser.Serialize(str,values)
 
-    let loadParms file (model:IModel) =
-        let ser = FsPickler.CreateBinarySerializer()
-        use str = IO.File.OpenRead(file:string)
-        let values = ser.Deserialize<TnsrData[]>(str)
-        let parms = model.Module.parameters()
-        Array.zip values parms
-        |> Array.iter (fun (td,t) -> setTnsrData td t)
+    //let loadParms file (model:IModel) =
+    //    let ser = FsPickler.CreateBinarySerializer()
+    //    use str = IO.File.OpenRead(file:string)
+    //    let values = ser.Deserialize<TnsrData[]>(str)
+    //    let parms = model.Module.parameters()
+    //    Array.zip values parms
+    //    |> Array.iter (fun (td,t) -> setTnsrData td t)
+
+    let saveParms file (model:IModel) = model.Module.save(file:string) |> ignore
+
+    let loadParms file (model:IModel) = model.Module.load(file:string) |> ignore
 
     let dipsose (m:IModel) = if m.Module <> null then m.Module.Dispose()
 
