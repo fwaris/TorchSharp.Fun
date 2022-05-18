@@ -1,13 +1,7 @@
-﻿let LIBTORCH = 
-    let path = System.Environment.GetEnvironmentVariable("LIBTORCH")
-    if path <> null then path else @"D:\s\libtorch\lib\torch_cuda.dll"
-System.Runtime.InteropServices.NativeLibrary.Load(LIBTORCH) |> ignore
-let path = System.Environment.GetEnvironmentVariable("path")
-let path' = $"{path};{LIBTORCH}"
-System.Environment.SetEnvironmentVariable("path",path')
-//#r "nuget: CATNeuro, Version=1.2.1"
-#r "nuget: FsPickler"
+﻿#r "nuget: FsPickler"
 #r "nuget: TorchSharp" 
+#r "nuget: libtorch-cpu, 1.10.0.1"   // cpu only version
+
 #load "TorchSharp.Fun.fs"
 
 open TorchSharp.Fun
@@ -22,7 +16,7 @@ module EmbNet =
 
     let create() = 
         let lisht() = 
-            F [] (fun z ->
+            F [] [] [] (fun z ->
                 use g = torch.nn.functional.tanh(z)
                 z * g
             )
@@ -42,7 +36,7 @@ module EmbNet =
 
     let createNamed() = 
         let lisht() = 
-            F [] (fun z ->
+            F [] [] [] (fun z ->
                 use g = torch.nn.functional.tanh(z)
                 z * g
             )
@@ -69,7 +63,7 @@ module EmbNetTx =
 
     let create() = 
         let lisht() = 
-            F [] (fun z ->
+            F [] [] [] (fun z ->
                 use g =  torch.nn.functional.tanh(z)
                 z * g
             )
@@ -83,7 +77,7 @@ module EmbNetTx =
         let ``:`` = torch.TensorIndex.Colon
         let first = torch.TensorIndex.Single(0L)
 
-        let model = Fnl ["model"; "tx"; "proj"; "emb"; "ls"] [M enc; M proj; M embedding; M ls] (fun (tokenIds,args) ->
+        let model = Fx ["model"; "tx"; "proj"; "emb"; "ls"] [M enc; M proj; M embedding; M ls] [] (fun (tokenIds,args) ->
             use emb         = embedding.forward(tokenIds)
             use embB2nd     = emb.permute(1L,0L,2L)
             use encoded     = enc.forward(embB2nd) 
@@ -106,5 +100,5 @@ let m1,l1 = EmbNet.createNamed()
 m1.Module.named_children() |> Seq.iter (fun struct(n,x) -> printfn "%A" (n,x))
 
 let m2,l2 = EmbNet.create()
-m2.forward(torch.tensor([|0.f|]), Args())
+m2.forward(torch.tensor([|1L;2L|],dimensions=[|1L;1L|]), Args())
 m2.Module.named_children() |> Seq.iter (fun struct(n,x) -> printfn "%A" (n,x))

@@ -102,65 +102,36 @@ type FuncModel(name,parameters:Modules.Parameter[],fwd:torch.Tensor->torch.Tenso
 let extend (fwd:torch.Tensor->torch.Tensor) = fun (t,ts:Args) -> fwd t,ts
 let notImplFwd (fwd:torch.Tensor) : torch.Tensor = failwith "Not implemented. Call with extended version of fwd that includes Args"
 
-///Create a model (module) from the given function and register the childModules as children
-let inline F childModules (fwd:torch.Tensor -> torch.Tensor) =
-    let p = new FuncModel("funcModel", [||],fwd, extend fwd) 
-    registerChildren childModules p
-    p :> IModel
-
-///Create a model (module) from the given function. Register the childModules as children and add the parameters to the model
-let inline  F' childModules (parameters:Modules.Parameter seq) (fwd:torch.Tensor -> torch.Tensor) =
-    let p = new FuncModel("funcModel", Seq.toArray parameters,fwd, extend fwd) 
-    registerChildren childModules p
-    p :> IModel
-
-///Create a model (module) from the given function and register the childModules as children
-let inline Fl childModules fwd =
-    let p = new FuncModel("funcModel", [||],fwd, extend fwd) 
-    registerChildren childModules p
-    p :> IModel
-
-///Create a model (module) from the given function. Register the childModules as children and add the parameters to the model
-let inline  Fl' childModules (parameters:Modules.Parameter seq) fwd =
-    let p = new FuncModel("funcModel", Seq.toArray parameters,fwd, extend fwd) 
-    registerChildren childModules p
-    p :> IModel
-
 let checkNames names childModules =
     if Seq.length names <> Seq.length childModules + 1 then 
         failwithf $"number of names should be 1 + the-number-of-child-modules. The first name is for the module itself. Expecting {Seq.length childModules + 1} name(s) but got {Seq.length names}"
 
-///<summary>Same as F but now assign names to all models (modules)</summary>
-/// <seealso cref="F" />
-let inline Fn names childModules (fwd:torch.Tensor -> torch.Tensor) =
-    checkNames names childModules
-    let p = new FuncModel(Seq.head names, [||],fwd, extend fwd) 
-    registerNamedChildren (Seq.tail names) childModules p
-    p : IModel
+///Create a model (module) from the given function and register the childModules and parameters, if not empty
+///If names is not empty, the function and its children will be assigned the given names. Count of names is 1 + number of childModules
+let inline F (names:string seq) childModules (parameters:Modules.Parameter seq) (fwd:torch.Tensor -> torch.Tensor) =
+    if Seq.isEmpty names then
+        let p = new FuncModel("funcModel", Seq.toArray parameters,fwd, extend fwd) 
+        registerChildren childModules p
+        p :> IModel
+    else
+        checkNames names childModules
+        let p = new FuncModel(Seq.head names, Seq.toArray parameters, fwd, extend fwd) 
+        registerNamedChildren (Seq.tail names) childModules p
+        p :> IModel
 
-///<summary>Same as F' but now assign names to all models (modules)</summary>
-/// <seealso cref="F'" />
-let inline Fn' names childModules (parameters:Modules.Parameter seq) (fwd:torch.Tensor -> torch.Tensor) =
-    checkNames names childModules
-    let p = new FuncModel(Seq.head names, Seq.toArray parameters,fwd, extend fwd) 
-    registerNamedChildren names childModules p
-    p : IModel
-
-///<summary>Same as F but now assign names to all models (modules)</summary>
-/// <seealso cref="F" />
-let inline Fnl names childModules fwd =
-    checkNames names childModules
-    let p = new FuncModel(Seq.head names, [||],notImplFwd,fwd) 
-    registerNamedChildren names childModules p
-    p : IModel
-
-///<summary>Same as F' but now assign names to all models (modules)</summary>
-/// <seealso cref="F'" />
-let inline Fnl' names childModules (parameters:Modules.Parameter seq) fwd =
-    checkNames names childModules
-    let p = new FuncModel(Seq.head names, Seq.toArray parameters,notImplFwd,fwd) 
-    registerNamedChildren names childModules p
-    p : IModel
+///Create a model (module) from the given function and register the childModules and parameters, if not empty
+///If names is not empty, the function and its children will be assigned the given names. Count of names is 1 + number of childModules
+///This version requires a second argument of type Args that supplies a list of named parameters
+let inline Fx (names:string seq) childModules (parameters:Modules.Parameter seq) fwd = 
+    if Seq.isEmpty names then
+        let p = new FuncModel("funcModel", Seq.toArray parameters,notImplFwd, fwd) 
+        registerChildren childModules p
+        p :> IModel
+    else
+        checkNames names childModules
+        let p = new FuncModel(Seq.head names, Seq.toArray parameters, notImplFwd, fwd) 
+        registerNamedChildren (Seq.tail names) childModules p
+        p :> IModel
 
 let inline (=>>) m1 (n,m2) = 
     let m1 = M m1
@@ -202,10 +173,38 @@ module Tensor =
         let s = t.data<'t>()
         s.CopyFrom(data,0,0L)
 
+    type D<'a> = 
+        | A of 'a[]         // flat array of values - from the inner most dimension
+        | G of D<'a>[]      // group of groups or flat arrays
+
+    //utility function to get raw tensor data as a recursive structure for debugging purposes
+    let getDataNested<'a when 'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = 
+        let ts = if t.device<>torch.CPU then t.cpu().data<'a>().ToArray() else t.data<'a>().ToArray()
+        let rdims =
+            t.shape 
+            |> Array.map int 
+            |> Array.rev            //start with inner most dimension
+            |> Array.toList
+        let rec loop ds (xs:D<'a>) =
+            match ds,xs with
+            | [],_                        -> xs
+            | d::[],G ds when d=ds.Length -> G ds
+            | d::[],A ds when d=ds.Length -> A ds
+            | d::rest,G ds -> loop rest (ds |> Array.chunkBySize d |> Array.map G |> G)
+            | d::rest,A ds -> loop rest (ds |> Array.chunkBySize d |> Array.map A |> G)
+        loop rdims (A ts)
+
 module Model =
     open MBrace.FsPickler
     open Tensor
 
+    let saveParms file (model:IModel) = model.Module.save(file:string) |> ignore
+
+    let loadParms file (model:IModel) = model.Module.load(file:string) |> ignore
+
+    let dipsose (m:IModel) = if m.Module <> null then m.Module.Dispose()
+
+    (* older method of saving model - not used
    // Enum.GetNames(typeof<torch.ScalarType>)
     type TnsrData =
         | FByte of byte[]
@@ -242,27 +241,21 @@ module Model =
         | FBool ds      -> setData<bool> t ds
         | FBFFloat16 ds -> setData<Half> t ds
 
-    //let saveParms file (model:IModel) =
-    //    let parms = model.Module.parameters()
-    //    let values = parms |> Array.map getTnsrData
-    //    let ser = FsPickler.CreateBinarySerializer()
-    //    use str = IO.File.Create(file:string)
-    //    ser.Serialize(str,values)
+    let saveParms file (model:IModel) =
+        let parms = model.Module.parameters()
+        let values = parms |> Array.map getTnsrData
+        let ser = FsPickler.CreateBinarySerializer()
+        use str = IO.File.Create(file:string)
+        ser.Serialize(str,values)
 
-    //let loadParms file (model:IModel) =
-    //    let ser = FsPickler.CreateBinarySerializer()
-    //    use str = IO.File.OpenRead(file:string)
-    //    let values = ser.Deserialize<TnsrData[]>(str)
-    //    let parms = model.Module.parameters()
-    //    Array.zip values parms
-    //    |> Array.iter (fun (td,t) -> setTnsrData td t)
-
-    let saveParms file (model:IModel) = model.Module.save(file:string) |> ignore
-
-    let loadParms file (model:IModel) = model.Module.load(file:string) |> ignore
-
-    let dipsose (m:IModel) = if m.Module <> null then m.Module.Dispose()
-
+    let loadParms file (model:IModel) =
+        let ser = FsPickler.CreateBinarySerializer()
+        use str = IO.File.OpenRead(file:string)
+        let values = ser.Deserialize<TnsrData[]>(str)
+        let parms = model.Module.parameters()
+        Array.zip values parms
+        |> Array.iter (fun (td,t) -> setTnsrData td t)
+    *)
 // module private _check_ = 
 //     open type TorchSharp.NN.Modules
 //     open TorchSharp.Fun
