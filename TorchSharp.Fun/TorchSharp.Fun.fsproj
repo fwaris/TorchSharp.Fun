@@ -4,15 +4,20 @@
     <TargetFramework>net6.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Authors>Faisal Waris</Authors>
-    <Description>Very rough functional wrapper over torchsharp. Consider this as an alpha version.</Description>
+    <Description>A wrapper over TorchSharp that provides a function-compostion style of model construction</Description>
     <Copyright>Copyright © 2021</Copyright>
     <PackageProjectUrl>https://github.com/fwaris/TorchSharpFun</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fwaris/TorchSharpFun</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Version>0.4.3</Version>
+    <Version>0.50</Version>
+    <PackageReadmeFile>readme.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\readme.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
     <None Include="Test.fsx" />
     <Compile Include="TorchSharp.Fun.fs" />
   </ItemGroup>
