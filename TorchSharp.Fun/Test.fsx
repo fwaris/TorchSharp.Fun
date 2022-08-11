@@ -1,7 +1,5 @@
 ﻿#r "nuget: FsPickler"
-#r "nuget: TorchSharp" 
-#r "nuget: libtorch-cpu, 1.10.0.1"   // cpu only version
-
+#r "nuget: TorchSharp-cpu" 
 #load "TorchSharp.Fun.fs"
 
 open TorchSharp.Fun
