@@ -12,8 +12,17 @@ type Args() =
     member _.set name value = d.[name] <- box value
     member _.get name = d.[name]
     member _.tryGet name = match d.TryGetValue name with true,v -> Some v | _ -> None
-    static member inline (?) (o:Args,name:string) :^R = (if name.StartsWith("_") then  o.tryGet name |> box else o.get name |> box) :?> ^R
     static member (?<-) (o:Args,name:string,value:'R) : Args = o.set name value; o
+
+    ///access required argument
+    static member inline (?) (o:Args,name:string) :^R = o.get name |> box :?> ^R
+
+    ///access optional argument
+    static member inline ( ?* ) (o:Args,name:string) :^R option =      
+        let r = o.tryGet name 
+        match r with 
+        | Some j -> j :?> ^R |> Some
+        | None   -> None            
 
 type IModel =
     abstract forward : torch.Tensor->torch.Tensor
@@ -198,74 +207,13 @@ module Model =
     open MBrace.FsPickler
     open Tensor
 
+    [<Obsolete("Use IModel.Module.save(...) overrides")>]
     let saveParms file (model:IModel) = model.Module.save(file:string) |> ignore
 
+    [<Obsolete("Use IModel.Module.load(...) overrides")>]
     let loadParms file (model:IModel) = model.Module.load(file:string) |> ignore
 
     let dipsose (m:IModel) = if m.Module <> null then m.Module.Dispose()
-
-    (* older method of saving model - not used
-   // Enum.GetNames(typeof<torch.ScalarType>)
-    type TnsrData =
-        | FByte of byte[]
-        | FInt8 of int8[]
-        | FInt16 of int16[]
-        | FInt32 of int32[]
-        | FInt64 of int64[]
-        | FFloat32 of float32[]
-        | FFloat64 of float[]
-        | FBool of bool[]
-        | FBFFloat16 of Half[]
-
-    let getTnsrData (t:torch.Tensor) =
-        match t.dtype with 
-        | torch.ScalarType.Byte     -> getData<byte> t      |> FByte
-        | torch.ScalarType.Int8     -> getData<int8> t      |> FInt8
-        | torch.ScalarType.Int16    -> getData<int16> t     |> FInt16
-        | torch.ScalarType.Int32    -> getData<int> t       |> FInt32
-        | torch.ScalarType.Int64    -> getData<int64> t     |> FInt64
-        | torch.ScalarType.Float32  -> getData<float32> t   |> FFloat32
-        | torch.ScalarType.Float64  -> getData<float> t     |> FFloat64
-        | torch.ScalarType.BFloat16 -> getData<Half> t      |> FBFFloat16
-        | x -> failwith $"data type %A{x} not handled"
-
-    let setTnsrData td (t:torch.Tensor) =
-        match td with
-        | FByte ds      -> setData<byte> t ds
-        | FInt8 ds      -> setData<int8> t ds
-        | FInt16 ds     -> setData<int16> t ds
-        | FInt32 ds     -> setData<int> t ds
-        | FInt64 ds     -> setData<int64> t ds
-        | FFloat32 ds   -> setData<float32> t ds
-        | FFloat64 ds   -> setData<float> t ds
-        | FBool ds      -> setData<bool> t ds
-        | FBFFloat16 ds -> setData<Half> t ds
-
-    let saveParms file (model:IModel) =
-        let parms = model.Module.parameters()
-        let values = parms |> Array.map getTnsrData
-        let ser = FsPickler.CreateBinarySerializer()
-        use str = IO.File.Create(file:string)
-        ser.Serialize(str,values)
-
-    let loadParms file (model:IModel) =
-        let ser = FsPickler.CreateBinarySerializer()
-        use str = IO.File.OpenRead(file:string)
-        let values = ser.Deserialize<TnsrData[]>(str)
-        let parms = model.Module.parameters()
-        Array.zip values parms
-        |> Array.iter (fun (td,t) -> setTnsrData td t)
-    *)
-// module private _check_ = 
-//     open type TorchSharp.NN.Modules
-//     open TorchSharp.Fun
-
-//     let s1 = SELU()
-//     let s1n = Linear(1L,1L)
-//     let s2 = GELU()
-    
-//     let m1 = s1 ->> s1n
-//     let m3 = s2 ->> m1
 
 
 
