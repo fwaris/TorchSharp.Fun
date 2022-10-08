@@ -98,7 +98,7 @@ type AbstractModel() =
                                                   }
 ///supporting class for creating 'forward' functions in a 'functional' way.
 type FuncModel(name,parameters:Modules.Parameter[],fwd:torch.Tensor->torch.Tensor, fwdExt:(torch.Tensor*Args->torch.Tensor*Args)) as this =
-    inherit Module(name)
+    inherit Module<torch.Tensor,torch.Tensor>(name)
     do parameters |> Array.iter (fun p -> this.register_parameter(p.name,p))
     override this.forward(t) = let t' = fwd t in t'
     member this.Module : Module = this :> _

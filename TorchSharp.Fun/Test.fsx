@@ -28,7 +28,7 @@ module EmbNet =
             ->> lisht()
             ->> torch.nn.Dropout(0.1)
             ->> torch.nn.Linear(BTL_N,BASE_TGTS)
-        let loss = torch.nn.functional.huber_loss()
+        let loss = torch.nn.HuberLoss()
 
         model,loss
 
@@ -49,7 +49,7 @@ module EmbNet =
             =>> ("drop2",torch.nn.Dropout(0.1))
             =>> ("proj20",torch.nn.Linear(BTL_N,BASE_TGTS))
 
-        let loss = torch.nn.functional.huber_loss()
+        let loss = torch.nn.HuberLoss()
 
         model,loss
 
@@ -84,7 +84,7 @@ module EmbNetTx =
             use pooledact   = ls.forward(pooled) 
             proj.forward(pooledact),args)
 
-        let loss = torch.nn.functional.mse_loss()
+        let loss = torch.nn.MSELoss()
 
         model,loss
 
