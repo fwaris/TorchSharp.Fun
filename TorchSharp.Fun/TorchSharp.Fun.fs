@@ -44,14 +44,16 @@ let parseName (n:string) =
         let prefix = n.Substring(0,i)
         prefix,num
 
-let rec makeUnique name names =
-    match names with
-    | [] -> name
-    | x::rest when name = x -> 
-        let n,num = parseName x
-        let n2 = $"{n}_{num+1}"
-        makeUnique n2 rest
-    | _::rest -> makeUnique name rest
+let makeUnique name names =
+    let rec makeUnique name names =
+        match names with
+        | [] -> name
+        | x::rest when name = x -> 
+            let n,num = parseName x
+            let n2 = $"{n}_{num+1}"
+            makeUnique n2 rest
+        | _::rest -> makeUnique name rest
+    makeUnique name (List.sort names)
 
 let registerNamed (parent:#Module) (name,child:#Module) = 
     if child <> null then 
@@ -69,37 +71,60 @@ let inline M< ^Q when ^Q : (member forward:torch.Tensor->torch.Tensor)>  (mdl:^Q
                         }
     | x              -> failwith $"{x} is not convertible to IModel"
 
-let inline registerNamedChildren names (childModules:IModel seq) parent =
-    let parent = M parent
-    Seq.zip (Seq.tail names) childModules     
-    |> Seq.iter (fun (n,c) -> registerNamed parent.Module (n,c.Module))
 
-let inline registerChildren children parent =
-    let names = Seq.append ["dummy"] (children |> Seq.map (fun c -> (M c).Module.GetName()))
-    registerNamedChildren names children parent
+type Dependent = Md of Module | Im of IModel | Pr of Modules.Parameter | Bu of torch.Tensor 
+let toDep (o:obj) =
+    match o with
+    | :? Module as m -> Md m
+    | :? IModel as m -> Im m
+    | :? Modules.Parameter as p -> Pr p
+    | :? torch.Tensor as t -> Bu t
+    | x -> failwith $"{x} cannot be registered as component of a module"
 
-[<AbstractClass>]
-type AbstractModel() =
-    abstract member forward : torch.Tensor -> torch.Tensor
-    abstract member Module : Module    
-    member this.forward (t,ts) = let t' = this.forward(t) in t',ts
 
-    interface IModel with
-        member this.forward t = this.forward(t)
-        member this.forward(x,ts) = this.forward(x,ts)
-        member this.Module = this.Module
-    //operators TBD
-    static member (+) (a:IModel,b:torch.Tensor) = {new IModel with
-                                                        member _.forward(t) = use t' = a.forward t in t' + b
-                                                        member this.forward(t,ts) =    
-                                                            let t' = this.forward(t)
-                                                            t',ts
-                                                        member _.Module = a.Module
-                                                  }
+let genUniqueName key acc name = 
+    let ns =
+        match acc |> Map.tryFind key with
+        | Some names -> let n = makeUnique name names in n::names
+        | None       -> [name]
+    acc |> Map.add key ns
+
+let parmName (p:Modules.Parameter) = if String.IsNullOrWhiteSpace p.name then "parm" else p.name
+let buffName (t:torch.Tensor) = if String.IsNullOrWhiteSpace t.name then "buff" else t.name
+    
+let genNames (deps:Dependent seq) =
+    let nameMap =
+        (Map.empty,deps)
+        ||> Seq.fold (fun acc d -> 
+            match d with
+            | Md m -> genUniqueName 'M' acc (m.GetName()) 
+            | Im m -> genUniqueName 'I' acc (m.Module.GetName())
+            | Pr p -> genUniqueName 'P' acc (parmName p)
+            | Bu t -> genUniqueName 'T' acc (buffName t)
+            )
+        |> Map.map(fun k v -> List.rev v)
+    
+    (([],nameMap),deps)
+    ||> Seq.fold (fun (ls,nm) d -> 
+        match d with
+        | Md _ -> let ns = nm.['M'] in ((ns.Head,d)::ls),(nm |> Map.add 'M' ns.Tail)
+        | Im _ -> let ns = nm.['I'] in ((ns.Head,d)::ls),(nm |> Map.add 'I' ns.Tail)
+        | Pr _ -> let ns = nm.['P'] in ((ns.Head,d)::ls),(nm |> Map.add 'P' ns.Tail)
+        | Bu _ -> let ns = nm.['T'] in ((ns.Head,d)::ls),(nm |> Map.add 'I' ns.Tail))
+    |> fst
+
 ///supporting class for creating 'forward' functions in a 'functional' way.
-type FuncModel(name,parameters:Modules.Parameter[],fwd:torch.Tensor->torch.Tensor, fwdExt:(torch.Tensor*Args->torch.Tensor*Args)) as this =
+type FuncModel(name,dependents:(string*Dependent) seq,fwd:torch.Tensor->torch.Tensor, fwdExt:(torch.Tensor*Args->torch.Tensor*Args)) as this =
     inherit Module<torch.Tensor,torch.Tensor>(name)
-    do parameters |> Array.iter (fun p -> this.register_parameter(p.name,p))
+    do
+        dependents 
+        |> Seq.iter (fun (n,d) ->
+            match d with
+            | Md m -> this.register_module(n,m)
+            | Im m -> this.register_module(n,m.Module)
+            | Pr p -> this.register_parameter(n,p)
+            | Bu t -> this.register_buffer(n,t))
+
     override this.forward(t) = let t' = fwd t in t'
     member this.Module : Module = this :> _
 
@@ -111,35 +136,35 @@ type FuncModel(name,parameters:Modules.Parameter[],fwd:torch.Tensor->torch.Tenso
 let extend (fwd:torch.Tensor->torch.Tensor) = fun (t,ts:Args) -> fwd t,ts
 let notImplFwd (fwd:torch.Tensor) : torch.Tensor = failwith "Not implemented. Call with extended version of fwd that includes Args"
 
-let checkNames names childModules =
-    if Seq.length names <> Seq.length childModules + 1 then 
-        failwithf $"number of names should be 1 + the-number-of-child-modules. The first name is for the module itself. Expecting {Seq.length childModules + 1} name(s) but got {Seq.length names}"
+let checkNames names dependents =
+    if Seq.length names <> Seq.length dependents + 1 then 
+        failwithf $"number of names should be 1 + the-number-of-child-modules. The first name is for the module itself. Expecting {Seq.length dependents + 1} name(s) but got {Seq.length names}"
 
 ///Create a model (module) from the given function and register the childModules and parameters, if not empty
 ///If names is not empty, the function and its children will be assigned the given names. Count of names is 1 + number of childModules
-let inline F (names:string seq) childModules (parameters:Modules.Parameter seq) (fwd:torch.Tensor -> torch.Tensor) =
+let inline F (names:string seq) (dependents:obj seq) (fwd:torch.Tensor -> torch.Tensor) =
     if Seq.isEmpty names then
-        let p = new FuncModel("funcModel", Seq.toArray parameters,fwd, extend fwd) 
-        registerChildren childModules p
+        let ds = dependents |> Seq.map toDep |> genNames
+        let p = new FuncModel("funcModel",ds,fwd, extend fwd) 
         p :> IModel
     else
-        checkNames names childModules
-        let p = new FuncModel(Seq.head names, Seq.toArray parameters, fwd, extend fwd) 
-        registerNamedChildren (Seq.tail names) childModules p
+        checkNames names dependents
+        let ds = dependents |> Seq.map toDep |> Seq.zip (Seq.tail names) 
+        let p = new FuncModel(Seq.head names, ds, fwd, extend fwd) 
         p :> IModel
 
 ///Create a model (module) from the given function and register the childModules and parameters, if not empty
 ///If names is not empty, the function and its children will be assigned the given names. Count of names is 1 + number of childModules
 ///This version requires a second argument of type Args that supplies a list of named parameters
-let inline Fx (names:string seq) childModules (parameters:Modules.Parameter seq) fwd = 
+let inline Fx (names:string seq) (dependents:obj seq) fwd = 
     if Seq.isEmpty names then
-        let p = new FuncModel("funcModel", Seq.toArray parameters,notImplFwd, fwd) 
-        registerChildren childModules p
+        let ds = dependents |> Seq.map toDep |> genNames
+        let p = new FuncModel("funcModel",ds,notImplFwd,fwd) 
         p :> IModel
     else
-        checkNames names childModules
-        let p = new FuncModel(Seq.head names, Seq.toArray parameters, notImplFwd, fwd) 
-        registerNamedChildren (Seq.tail names) childModules p
+        checkNames names dependents
+        let ds = dependents |> Seq.map toDep |> Seq.zip (Seq.tail names) 
+        let p = new FuncModel(Seq.head names, ds, notImplFwd,fwd) 
         p :> IModel
 
 let inline (=>>) m1 (n,m2) = 
@@ -202,18 +227,6 @@ module Tensor =
             | d::rest,G ds -> loop rest (ds |> Array.chunkBySize d |> Array.map G |> G)
             | d::rest,A ds -> loop rest (ds |> Array.chunkBySize d |> Array.map A |> G)
         loop rdims (A ts)
-
-module Model =
-    open MBrace.FsPickler
-    open Tensor
-
-    [<Obsolete("Use IModel.Module.save(...) overrides")>]
-    let saveParms file (model:IModel) = model.Module.save(file:string) |> ignore
-
-    [<Obsolete("Use IModel.Module.load(...) overrides")>]
-    let loadParms file (model:IModel) = model.Module.load(file:string) |> ignore
-
-    let dipsose (m:IModel) = if m.Module <> null then m.Module.Dispose()
 
 
 

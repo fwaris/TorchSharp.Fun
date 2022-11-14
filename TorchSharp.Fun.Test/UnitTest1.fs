@@ -2,6 +2,7 @@ module TorchSharp.Fun.Test
 open NUnit.Framework
 open TorchSharp
 open TorchSharp.Fun
+open System
 
 [<SetUp>]
 let Setup () =
@@ -16,7 +17,7 @@ let CreateModel () =
 
     let create() = 
         let lisht() = 
-            F [] [] [] (fun z ->
+            F [] [] (fun z ->
                 use g = torch.nn.functional.tanh(z)
                 z * g
             )
@@ -44,7 +45,7 @@ let CreateModelWithNames() =
 
     let createNamed() = 
         let lisht() = 
-            F [] [] [] (fun z ->
+            F [] [] (fun z ->
                 use g = torch.nn.functional.tanh(z)
                 z * g
             )
@@ -68,7 +69,7 @@ let CreateModelWithNames() =
 [<Test>]
 let InvokeModel() =
     let m = torch.nn.Linear(10,10) ->> torch.nn.ReLU()
-    use t1 = torch.rand([|1L;10L|], dtype = torch.float32)
+    use t1 = torch.rand([|1L;10L|], dtype = Nullable torch.float32)
     use t2 = m.forward(t1) 
     ()
 
@@ -76,7 +77,7 @@ let InvokeModel() =
 let SaveLoadModel() =
     let create() = torch.nn.Linear(10,10) ->> torch.nn.ReLU()
     let m1 = create()
-    use t1 = torch.rand([|1L;10L|], dtype = torch.float32)
+    use t1 = torch.rand([|1L;10L|], dtype = Nullable torch.float32)
     use t2 = m1.forward(t1) 
     let tmp = System.IO.Path.GetTempFileName()
     m1.Module.save(tmp) |> ignore
@@ -93,9 +94,9 @@ let ``function model`` () =
     let l1 = torch.nn.Linear(10,10)
     let l2 = torch.nn.Linear(10,10)
 
-    let model  = F [] [M l1; M l2] [] (fun t -> t --> l1 --> l2)
+    let model  = F [] [l1; l2] (fun t -> t --> l1 --> l2)
 
-    use t = torch.rand([|1L;10L|],dtype=torch.float)
+    use t = torch.rand([|1L;10L|], dtype=Nullable torch.float)
     use oT = model.forward(t)
     ()
 
@@ -106,8 +107,8 @@ let ``forward with extra parameters``() =
     //additional arguments - a wrapper around dictionary that offers some typing support
     let args = 
         (Args()
-            ?extra1 <- torch.rand([|2L;10L|],dtype=torch.float))        //required argument
-            ?_extraOpt1 <- torch.rand([|2L;10L|],dtype=torch.float)     //optional arg; (by convention name starts with underscore '_')
+            ?extra1 <- torch.rand([|2L;10L|],dtype=Nullable torch.float))        //required argument
+            ?_extraOpt1 <- torch.rand([|2L;10L|],dtype=Nullable torch.float)     //optional arg; (by convention name starts with underscore '_')
 
     //component modules we need 
     let l1 = torch.nn.Linear(10,10)
@@ -115,10 +116,8 @@ let ``forward with extra parameters``() =
     let l3 = torch.nn.Linear(10,10)
     let r1 = torch.nn.ReLU()
 
-    let deps =[M l1;M l2; M l3; M r1] //dependencies for the function 'model' below
-
     let model = 
-        Fx [] deps [] (fun (tBase,args) ->
+        Fx [] [l1; l2; l3; r1] (fun (tBase,args) ->
             let extra1:torch.Tensor = args?extra1                       //access additional required argument (note: type is specified at access)
             let _extraOpt1:torch.Tensor option = args?* "_extraOpt1"    //access optional argument 
 
@@ -134,6 +133,6 @@ let ``forward with extra parameters``() =
 
             oFinal,args')                                              //Fx 'forward' function should return result and args
 
-    let tBase = torch.rand([|1L;10L|],dtype=torch.float)
+    let tBase = torch.rand([|1L;10L|],dtype=Nullable torch.float)
     let tF,arg2 = model.forward(tBase,args)                            //invoke the model with extra arguments
     ()

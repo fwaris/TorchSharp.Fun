@@ -6,7 +6,7 @@ A wrapper over TorchSharp that provides a **function-compostion** style of model
 
 ```F#
 let lisht() = 
-    F [] [] [] (fun z ->
+    F [] [] (fun z ->
         use g = torch.nn.functional.tanh(z)
         z * g
     )
