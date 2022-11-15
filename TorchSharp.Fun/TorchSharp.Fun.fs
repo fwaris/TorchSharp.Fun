@@ -28,6 +28,9 @@ type IModel =
     abstract forward : torch.Tensor->torch.Tensor
     abstract forward : torch.Tensor*Args -> torch.Tensor*Args //multiple inputs and outputs
     abstract Module : Module
+    ///Hack to move buffers to the same device as the module - does not work if FuncModel is nested deep
+    ///May need to manage buffers manually in some cases
+    abstract to' : torch.Device -> unit
 
 //let randName() = Guid.NewGuid().ToString()
 
@@ -68,18 +71,19 @@ let inline M< ^Q when ^Q : (member forward:torch.Tensor->torch.Tensor)>  (mdl:^Q
                            member x.forward(t) = (^Q : (member forward:torch.Tensor->torch.Tensor)(mdl,t))
                            member x.forward(t,ts) = let t' = x.forward(t) in t',ts
                            member _.Module = m
+                           member _.to' (device) = match m with  :? FuncModel as fm -> fm.to'(device) | _ -> m.``to``(device) |> ignore
                         }
     | x              -> failwith $"{x} is not convertible to IModel"
 
 
-type Dependent = Md of Module | Im of IModel | Pr of Modules.Parameter | Bu of torch.Tensor 
+type Dependent = Md of Module | Im of IModel | Pr of Ref<Modules.Parameter> | Bu of Ref<torch.Tensor>
 let toDep (o:obj) =
     match o with
     | :? Module as m -> Md m
     | :? IModel as m -> Im m
-    | :? Modules.Parameter as p -> Pr p
-    | :? torch.Tensor as t -> Bu t
-    | x -> failwith $"{x} cannot be registered as component of a module"
+    | :? Ref<Modules.Parameter> as p -> Pr p
+    | :? Ref<torch.Tensor> as t -> Bu t
+    | x -> failwith $"{x} cannot be registered as dependent of a module. Valid dependents are torch.nn.Module, IModel, Ref<Modules.Parameter> and Ref<torch.Tensor>"
 
 
 let genUniqueName key acc name = 
@@ -99,8 +103,8 @@ let genNames (deps:Dependent seq) =
             match d with
             | Md m -> genUniqueName 'M' acc (m.GetName()) 
             | Im m -> genUniqueName 'I' acc (m.Module.GetName())
-            | Pr p -> genUniqueName 'P' acc (parmName p)
-            | Bu t -> genUniqueName 'T' acc (buffName t)
+            | Pr p -> genUniqueName 'P' acc (parmName p.Value)
+            | Bu t -> genUniqueName 'T' acc (buffName t.Value)
             )
         |> Map.map(fun k v -> List.rev v)
     
@@ -113,6 +117,14 @@ let genNames (deps:Dependent seq) =
         | Bu _ -> let ns = nm.['T'] in ((ns.Head,d)::ls),(nm |> Map.add 'I' ns.Tail))
     |> fst
 
+type torch.nn.Module with
+    ///Hack to move buffers to the same device as the module - does not work if FuncModel is nested deep
+    ///May need to manage buffers manually in some cases
+    member this.to'(device:torch.Device) =
+        match this with
+        | :? FuncModel as fm -> fm.to'(device)
+        | _                  -> this.``to``(device) |> ignore
+
 ///supporting class for creating 'forward' functions in a 'functional' way.
 type FuncModel(name,dependents:(string*Dependent) seq,fwd:torch.Tensor->torch.Tensor, fwdExt:(torch.Tensor*Args->torch.Tensor*Args)) as this =
     inherit Module<torch.Tensor,torch.Tensor>(name)
@@ -122,16 +134,28 @@ type FuncModel(name,dependents:(string*Dependent) seq,fwd:torch.Tensor->torch.Te
             match d with
             | Md m -> this.register_module(n,m)
             | Im m -> this.register_module(n,m.Module)
-            | Pr p -> this.register_parameter(n,p)
-            | Bu t -> this.register_buffer(n,t))
+            | Pr p -> this.register_parameter(n,p.Value)
+            | Bu t -> this.register_buffer(n,t.Value))
 
     override this.forward(t) = let t' = fwd t in t'
     member this.Module : Module = this :> _
+
+    //newer versions of PyTorch/TorchSharp require non-modules to be handled differently
+    member this.to'(device:torch.Device) = 
+        let m = this.Module.``to``(device) 
+        dependents
+        |> Seq.iter (fun (n,d) ->
+            match d with
+            | Pr p -> p.Value <- new Modules.Parameter(p.Value.``to``(device))
+            | Bu t -> t.Value <- t.Value.``to``(device)
+            | Im m -> m.to'(device)
+            | Md m -> m.to'(device))
 
     interface IModel with
         member this.forward(t) = this.forward(t)
         member this.forward(t,ts:Args) : (torch.Tensor * Args)= fwdExt(t,ts)
         member this.Module = this :> _ 
+        member this.to'(device) = this.to'(device)
 
 let extend (fwd:torch.Tensor->torch.Tensor) = fun (t,ts:Args) -> fwd t,ts
 let notImplFwd (fwd:torch.Tensor) : torch.Tensor = failwith "Not implemented. Call with extended version of fwd that includes Args"
@@ -181,6 +205,7 @@ let inline (=>>) m1 (n,m2) =
             t'.Dispose()
             t2_s
         member _.Module = m1.Module
+        member _.to'(device) = m1.to'(device)
     }
 
 let inline (->>) m1 m2 =  

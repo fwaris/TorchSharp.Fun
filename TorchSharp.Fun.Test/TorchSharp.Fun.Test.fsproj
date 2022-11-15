@@ -9,8 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="gpu\registerbufferTest.fsx" />
     <None Include="gpu\gputest.fsx" />
     <Compile Include="UnitTest1.fs" />
+    <Compile Include="CudaTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -26,7 +28,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="TorchSharp-cpu" Version="0.99.0" />
+    <PackageReference Include="TorchSharp-cuda-windows" Version="0.99.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,7 +38,5 @@
   <ItemGroup>
     <PackageReference Update="FSharp.Core" Version="7.0.0" />
   </ItemGroup>
-
-  <ItemGroup />
 
 </Project>
