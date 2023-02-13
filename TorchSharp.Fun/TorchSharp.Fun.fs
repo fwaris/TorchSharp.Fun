@@ -134,8 +134,8 @@ type FuncModel(name,dependents:(string*Dependent) seq,fwd:torch.Tensor->torch.Te
             match d with
             | Md m -> this.register_module(n,m)
             | Im m -> this.register_module(n,m.Module)
-            | Pr p -> this.register_parameter(n,p.Value)
-            | Bu t -> this.register_buffer(n,t.Value))
+            | Pr p -> p.Value.name <- n; this.register_parameter(n,p.Value)
+            | Bu t -> t.Value.name <- n; this.register_buffer(n,t.Value))
 
     override this.forward(t) = let t' = fwd t in t'
     member this.Module : Module = this :> _
@@ -146,8 +146,8 @@ type FuncModel(name,dependents:(string*Dependent) seq,fwd:torch.Tensor->torch.Te
         dependents
         |> Seq.iter (fun (n,d) ->
             match d with
-            | Pr p -> p.Value <- new Modules.Parameter(p.Value.``to``(device))
-            | Bu t -> t.Value <- t.Value.``to``(device)
+            | Pr p -> p.Value <- m.get_parameter(p.Value.name); p.Value.retain_grad()   //parameter loses non-leaf status to need to put retain_grad - fix up references after model move
+            | Bu t -> t.Value <- m.get_buffer(t.Value.name); 
             | Im m -> m.to'(device)
             | Md m -> m.to'(device))
 
