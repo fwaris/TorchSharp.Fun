@@ -10,7 +10,7 @@
     <PackageProjectUrl>https://github.com/fwaris/TorchSharp.Fun</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fwaris/TorchSharpFun</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Version>0.75</Version>
+    <Version>0.76</Version>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <PlatformTarget>x64</PlatformTarget>
     <PackageReleaseNotes>Better handling of parameters when moving model to another device.</PackageReleaseNotes>
