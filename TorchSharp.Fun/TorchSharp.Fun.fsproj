@@ -13,7 +13,7 @@
     <Version>0.75</Version>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <PlatformTarget>x64</PlatformTarget>
-    <PackageReleaseNotes>Changes (maybe temporary) to better handle the transfer of buffers between devices</PackageReleaseNotes>
+    <PackageReleaseNotes>Better handling of parameters when moving model to another device.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
