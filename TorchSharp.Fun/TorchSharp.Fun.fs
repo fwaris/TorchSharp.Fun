@@ -61,7 +61,19 @@ let makeUnique name names =
 let registerNamed (parent:#Module) (name,child:#Module) = 
     if child <> null then 
         let uname = parent.named_children() |> Seq.map(fun struct(n,_) -> n) |> Seq.toList |> makeUnique name 
-        parent.register_module(uname,child)    
+        parent.register_module(uname,child)   
+    
+let internalMoveToDevice (m:torch.nn.Module) (device:torch.Device) =
+    let submodules (m:torch.nn.Module) = m.named_modules() |> Seq.map(fun struct(_,m) -> m)
+    let rec childModules acc (m:torch.nn.Module) =
+        let acc = 
+            match m with 
+            | :? FuncModel as fm -> ((fm::acc),submodules fm) ||> Seq.fold childModules
+            | m                  -> (acc,submodules m) ||> Seq.fold childModules
+        acc
+    let m = m.``to``(device)                                //first move module to device
+    let cs = childModules [] m                              //find all FuncModel child instances
+    cs |> Seq.iter (fun fm -> fm.FixBufferRefs(device))     //fix buffer 'ref's to point to new tensor on device
 
 ///convert object to IModel if convertible
 let inline M< ^Q when ^Q : (member forward:torch.Tensor->torch.Tensor)>  (mdl:^Q) =
@@ -71,10 +83,9 @@ let inline M< ^Q when ^Q : (member forward:torch.Tensor->torch.Tensor)>  (mdl:^Q
                            member x.forward(t) = (^Q : (member forward:torch.Tensor->torch.Tensor)(mdl,t))
                            member x.forward(t,ts) = let t' = x.forward(t) in t',ts
                            member _.Module = m
-                           member _.to' (device) = match m with  :? FuncModel as fm -> fm.to'(device) | _ -> m.``to``(device) |> ignore
+                           member this.to' (device) = internalMoveToDevice this.Module device
                         }
     | x              -> failwith $"{x} is not convertible to IModel"
-
 
 type Dependent = Md of Module | Im of IModel | Pr of Ref<Modules.Parameter> | Bu of Ref<torch.Tensor>
 let toDep (o:obj) =
@@ -117,13 +128,10 @@ let genNames (deps:Dependent seq) =
         | Bu _ -> let ns = nm.['T'] in ((ns.Head,d)::ls),(nm |> Map.add 'I' ns.Tail))
     |> fst
 
+
 type torch.nn.Module with
-    ///Hack to move buffers to the same device as the module - does not work if FuncModel is nested deep
-    ///May need to manage buffers manually in some cases
-    member this.to'(device:torch.Device) =
-        match this with
-        | :? FuncModel as fm -> fm.to'(device)
-        | _                  -> this.``to``(device) |> ignore
+    ///Hack to move buffers to the same device as the module 
+    member this.to'(device:torch.Device) = internalMoveToDevice this device
 
 ///supporting class for creating 'forward' functions in a 'functional' way.
 type FuncModel(name,dependents:(string*Dependent) seq,fwd:torch.Tensor->torch.Tensor, fwdExt:(torch.Tensor*Args->torch.Tensor*Args)) as this =
@@ -140,16 +148,21 @@ type FuncModel(name,dependents:(string*Dependent) seq,fwd:torch.Tensor->torch.Te
     override this.forward(t) = let t' = fwd t in t'
     member this.Module : Module = this :> _
 
-    //newer versions of PyTorch/TorchSharp require non-modules to be handled differently
-    member this.to'(device:torch.Device) = 
-        let m = this.Module.``to``(device) 
+    member internal this.FixBufferRefs(device:torch.Device) =
+        let m = this.Module
         dependents
         |> Seq.iter (fun (n,d) ->
             match d with
             | Pr p -> p.Value <- m.get_parameter(p.Value.name); p.Value.retain_grad()   //parameter loses non-leaf status to need to put retain_grad - fix up references after model move
             | Bu t -> t.Value <- m.get_buffer(t.Value.name); 
-            | Im m -> m.to'(device)
-            | Md m -> m.to'(device))
+            | Im m -> ()
+            | Md m -> ())
+        
+
+    //newer versions of PyTorch/TorchSharp require non-modules to be handled differently
+    member this.to'(device:torch.Device) = 
+        //let m = this.Module.``to``(device) 
+        internalMoveToDevice this.Module device
 
     interface IModel with
         member this.forward(t) = this.forward(t)

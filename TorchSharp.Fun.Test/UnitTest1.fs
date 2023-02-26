@@ -85,9 +85,10 @@ let SaveLoadModel() =
     m2.Module.load(tmp) |> ignore   
     let m1_d = m1.Module.state_dict()
     let m2_d = m2.Module.state_dict()
-    Seq.zip m1_d m2_d 
-    |> Seq.forall (fun (a,b) -> a.Key = b.Key && a.Value.shape = b.Value.shape)
-
+    let allEq = 
+        Seq.zip m1_d m2_d 
+        |> Seq.forall (fun (a,b) -> a.Key = b.Key && a.Value.shape = b.Value.shape)
+    assert(allEq)
 
 [<Test>]
 let ``function model`` () =
