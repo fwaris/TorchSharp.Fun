@@ -228,11 +228,11 @@ let inline (->>) m1 m2 =
 
 module Tensor = 
     //Note: ensure 't matches tensor datatype otherwise ToArray might crash the app (i.e. exception cannot be caught)
-    let private _getData<'t when 't:>ValueType and 't:struct and 't : (new:unit->'t) > (t:torch.Tensor) =
+    let inline private _getData<'t when 't: unmanaged and 't:>ValueType and 't:struct and 't : (new:unit->'t) > (t:torch.Tensor) =
         let s = t.data<'t>()
         s.ToArray()
 
-    let getData<'t when 't:>ValueType and 't:struct and 't : (new:unit->'t)>  (t:torch.Tensor) =
+    let getData<'t when 't: unmanaged and 't:>ValueType and 't:struct and 't : (new:unit->'t)>  (t:torch.Tensor) =
         if t.device_type <> DeviceType.CPU then 
             //use t1 = t.clone()
             use t2 = t.cpu()
@@ -240,7 +240,7 @@ module Tensor =
         else 
             _getData<'t> t
   
-    let setData<'t when 't:>ValueType and 't:struct and 't : (new:unit->'t)> (t:torch.Tensor) (data:'t[]) =
+    let setData<'t when 't: unmanaged and 't:>ValueType and 't:struct and 't : (new:unit->'t)> (t:torch.Tensor) (data:'t[]) =
         if t.device_type = DeviceType.CPU |> not then failwith "tensor has to be on cpu for setData"        
         let s = t.data<'t>()
         s.CopyFrom(data,0,0L)
@@ -250,7 +250,7 @@ module Tensor =
         | G of D<'a>[]      // group of groups or flat arrays
 
     //utility function to get raw tensor data as a recursive structure for debugging purposes
-    let getDataNested<'a when 'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = 
+    let getDataNested<'a when 'a: unmanaged and  'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = 
         let ts = if t.device<>torch.CPU then t.cpu().data<'a>().ToArray() else t.data<'a>().ToArray()
         let rdims =
             t.shape 

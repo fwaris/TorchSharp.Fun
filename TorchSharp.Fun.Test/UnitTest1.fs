@@ -23,7 +23,7 @@ let CreateModel () =
             )
 
         let model =
-            torch.nn.EmbeddingBag(EMB_INDX_DIM,EMB_DIM)
+            torch.nn.Embedding(num_embeddings = EMB_INDX_DIM, embedding_dims = EMB_DIM )
             ->> torch.nn.Linear(EMB_DIM,BTL_N)
             ->> lisht()
             ->> torch.nn.Dropout(0.1)
@@ -51,7 +51,7 @@ let CreateModelWithNames() =
             )
 
         let model =
-            torch.nn.EmbeddingBag(EMB_INDX_DIM,EMB_DIM)
+            torch.nn.Embedding(EMB_INDX_DIM,EMB_DIM)
             =>> ("emb",torch.nn.Linear(EMB_DIM,BTL_N))
             =>> ("ls",lisht())
             =>> ("drop", torch.nn.Dropout(0.1))
