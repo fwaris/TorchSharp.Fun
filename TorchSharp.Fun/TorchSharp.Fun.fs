@@ -153,7 +153,7 @@ type FuncModel(name,dependents:(string*Dependent) seq,fwd:torch.Tensor->torch.Te
         dependents
         |> Seq.iter (fun (n,d) ->
             match d with
-            | Pr p -> p.Value <- m.get_parameter(p.Value.name); p.Value.retain_grad()   //parameter loses non-leaf status to need to put retain_grad - fix up references after model move
+            | Pr p -> p.Value <- m.get_parameter(p.Value.name); // update: seems parameters are moved properly now in torchsharp. just fix reference
             | Bu t -> t.Value <- m.get_buffer(t.Value.name); 
             | Im m -> ()
             | Md m -> ())

@@ -10,10 +10,10 @@
     <PackageProjectUrl>https://github.com/fwaris/TorchSharp.Fun</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fwaris/TorchSharpFun</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Version>0.77</Version>
+    <Version>0.79</Version>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <PlatformTarget>x64</PlatformTarget>
-    <PackageReleaseNotes>Fix deeply nested buffer references when moving model to another device</PackageReleaseNotes>
+    <PackageReleaseNotes>Updated to match torchsharp changes</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,7 +27,6 @@
   <ItemGroup />
 
   <ItemGroup>
-    <PackageReference Include="FsPickler" Version="5.3.2" />
     <PackageReference Include="TorchSharp" Version="0.101.5" />
   </ItemGroup>
 

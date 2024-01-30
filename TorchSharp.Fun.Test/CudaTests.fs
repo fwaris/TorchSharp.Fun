@@ -30,7 +30,7 @@ let ``model with buffer`` () =
 
     let m = m1 ->> m2
 
-    m.to'(device)
+    m.to'(device) //need to use this version when using parameters and buffers as part of the model
 
     let t1input = torch.rand([|10L|]).``to``(device)
     let t' = m.forward t1input
