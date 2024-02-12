@@ -10,10 +10,10 @@
     <PackageProjectUrl>https://github.com/fwaris/TorchSharp.Fun</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fwaris/TorchSharpFun</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Version>0.79</Version>
+    <Version>0.80</Version>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <PlatformTarget>x64</PlatformTarget>
-    <PackageReleaseNotes>Updated to match torchsharp changes</PackageReleaseNotes>
+    <PackageReleaseNotes>rev packages</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,7 +27,7 @@
   <ItemGroup />
 
   <ItemGroup>
-    <PackageReference Include="TorchSharp" Version="0.101.5" />
+    <PackageReference Include="TorchSharp" Version="0.101.6" />
   </ItemGroup>
 
   <ItemGroup>

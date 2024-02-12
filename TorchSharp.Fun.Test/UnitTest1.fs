@@ -137,3 +137,43 @@ let ``forward with extra parameters``() =
     let tBase = torch.rand([|1L;10L|],dtype=Nullable torch.float)
     let tF,arg2 = model.forward(tBase,args)                            //invoke the model with extra arguments
     ()
+
+[<Test>]
+let resnetModel() =
+    let D_MODEL = 512
+    let FTR_DIM = 2048
+    let ERA_DIM = 3
+    let RESNET_DEPTH = 2
+
+    let inline resnetCell act (input: IModel) =
+        let cell =  
+            torch.nn.Linear(D_MODEL, D_MODEL) //weight layer 1 
+            ->> torch.nn.Dropout()
+            ->> act()
+            ->> torch.nn.Linear(D_MODEL, D_MODEL)                
+        let join =
+            F [] [input; cell] (fun ``input tensor`` -> 
+                    use t1 = input.forward ``input tensor``
+                    use t2 = cell.forward t1
+                    t1 + t2)
+        join ->> act()
+
+    let create() =
+        let ftrModel = 
+            let emb = torch.nn.Linear(FTR_DIM, D_MODEL, hasBias=false) |> M
+            let rsLayers =
+                (emb, [ 1 .. RESNET_DEPTH ])
+                ||> List.fold (fun emb _ -> resnetCell torch.nn.SELU emb)
+            rsLayers
+        let model = 
+            let eraModel = torch.nn.Linear(ERA_DIM, D_MODEL) |> M
+            let proj = torch.nn.Linear(D_MODEL,1L) 
+            Fx [] [ftrModel; eraModel] (fun (t,args) -> 
+                use inpEra : TorchSharp.torch.Tensor = args?era
+                use era = eraModel.forward inpEra
+                use ftr = ftrModel.forward t
+                use comb = ftr + era
+                proj.forward(comb),args)
+        model
+
+    create() |> ignore
