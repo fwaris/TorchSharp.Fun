@@ -168,7 +168,7 @@ let resnetModel() =
         let model = 
             let eraModel = torch.nn.Linear(ERA_DIM, D_MODEL) |> M
             let proj = torch.nn.Linear(D_MODEL,1L) 
-            Fx [] [ftrModel; eraModel] (fun (t,args) -> 
+            Fx [] [ftrModel; eraModel; proj] (fun (t,args) -> 
                 use inpEra : TorchSharp.torch.Tensor = args?era
                 use era = eraModel.forward inpEra
                 use ftr = ftrModel.forward t

@@ -96,38 +96,21 @@ let toDep (o:obj) =
     | :? Ref<torch.Tensor> as t -> Bu t
     | x -> failwith $"{x} cannot be registered as dependent of a module. Valid dependents are torch.nn.Module, IModel, Ref<Modules.Parameter> and Ref<torch.Tensor>"
 
-
-let genUniqueName key acc name = 
-    let ns =
-        match acc |> Map.tryFind key with
-        | Some names -> let n = makeUnique name names in n::names
-        | None       -> [name]
-    acc |> Map.add key ns
-
 let parmName (p:Modules.Parameter) = if String.IsNullOrWhiteSpace p.name then "parm" else p.name
 let buffName (t:torch.Tensor) = if String.IsNullOrWhiteSpace t.name then "buff" else t.name
     
 let genNames (deps:Dependent seq) =
-    let nameMap =
-        (Map.empty,deps)
-        ||> Seq.fold (fun acc d -> 
+    ([],deps)
+    ||> Seq.fold (fun acc d -> 
+        let n = 
             match d with
-            | Md m -> genUniqueName 'M' acc (m.GetName()) 
-            | Im m -> genUniqueName 'I' acc (m.Module.GetName())
-            | Pr p -> genUniqueName 'P' acc (parmName p.Value)
-            | Bu t -> genUniqueName 'T' acc (buffName t.Value)
-            )
-        |> Map.map(fun k v -> List.rev v)
-    
-    (([],nameMap),deps)
-    ||> Seq.fold (fun (ls,nm) d -> 
-        match d with
-        | Md _ -> let ns = nm.['M'] in ((ns.Head,d)::ls),(nm |> Map.add 'M' ns.Tail)
-        | Im _ -> let ns = nm.['I'] in ((ns.Head,d)::ls),(nm |> Map.add 'I' ns.Tail)
-        | Pr _ -> let ns = nm.['P'] in ((ns.Head,d)::ls),(nm |> Map.add 'P' ns.Tail)
-        | Bu _ -> let ns = nm.['T'] in ((ns.Head,d)::ls),(nm |> Map.add 'I' ns.Tail))
-    |> fst
-
+            | Md m -> m.GetName()
+            | Im m -> m.Module.GetName()
+            | Pr p -> parmName p.Value
+            | Bu t -> buffName t.Value
+        let n = makeUnique n (List.map fst acc)
+        (n,d)::acc)
+    |> List.rev
 
 type torch.nn.Module with
     ///Hack to move buffers to the same device as the module 
