@@ -10,7 +10,7 @@
     <PackageProjectUrl>https://github.com/fwaris/TorchSharp.Fun</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fwaris/TorchSharpFun</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Version>0.80</Version>
+    <Version>0.81</Version>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <PlatformTarget>x64</PlatformTarget>
     <PackageReleaseNotes>rev packages</PackageReleaseNotes>
