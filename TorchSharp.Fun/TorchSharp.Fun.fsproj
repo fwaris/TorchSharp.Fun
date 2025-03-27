@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
 	<LangVersion>preview</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Authors>Faisal Waris</Authors>
@@ -10,10 +10,12 @@
     <PackageProjectUrl>https://github.com/fwaris/TorchSharp.Fun</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fwaris/TorchSharpFun</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Version>0.82</Version>
+    <Version>0.90.1</Version>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <PlatformTarget>x64</PlatformTarget>
-    <PackageReleaseNotes>rev packages</PackageReleaseNotes>
+    <PackageReleaseNotes>API break! IModel.to'(device) no longer available instead use IModel.Module.to(device) 
+	Upgraded to match changes in TorchSharp 0.105.0; bugfix related to buffers
+	</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,11 +29,11 @@
   <ItemGroup />
 
   <ItemGroup>
-    <PackageReference Include="TorchSharp" Version="0.103.0" />
+    <PackageReference Include="TorchSharp" Version="0.105.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="8.0.400" />
+    <PackageReference Update="FSharp.Core" Version="9.0.201" />
   </ItemGroup>
 
 </Project>
