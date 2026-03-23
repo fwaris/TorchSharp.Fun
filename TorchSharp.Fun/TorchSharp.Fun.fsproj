@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
 	<LangVersion>preview</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Authors>Faisal Waris</Authors>
@@ -10,12 +10,10 @@
     <PackageProjectUrl>https://github.com/fwaris/TorchSharp.Fun</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fwaris/TorchSharpFun</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Version>0.90.3</Version>
+    <Version>0.91.0</Version>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <PlatformTarget>x64</PlatformTarget>
-    <PackageReleaseNotes>Fix 'to' device for combinator ->> models; API break! IModel.to'(device) no longer available instead use IModel.Module.to(device) 
-	Upgraded to match changes in TorchSharp 0.105.0; bugfix related to buffers
-	</PackageReleaseNotes>
+    <PackageReleaseNotes>.net 10 and rev packages</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,11 +27,11 @@
   <ItemGroup />
 
   <ItemGroup>
-    <PackageReference Include="TorchSharp" Version="0.105.1" />
+    <PackageReference Include="TorchSharp" Version="0.106.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="9.0.303" />
+    <PackageReference Update="FSharp.Core" Version="10.1.201" />
   </ItemGroup>
 
 </Project>
